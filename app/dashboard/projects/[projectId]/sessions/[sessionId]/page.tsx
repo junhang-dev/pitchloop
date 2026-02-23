@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createActionItem } from "./actions";
+import { createActionItem, uploadSessionMedia } from "./actions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isPlayableMime } from "@/lib/storage/rehearsal";
 
 type SessionDetailPageProps = {
   params: { projectId: string; sessionId: string };
@@ -18,7 +20,7 @@ export default async function SessionDetailPage({
   const supabase = await createSupabaseServerClient();
   const { data: session } = await supabase
     .from("sessions")
-    .select("id, title, created_at")
+    .select("id, title, created_at, media_path, media_mime, media_size")
     .eq("id", params.sessionId)
     .eq("project_id", params.projectId)
     .single();
@@ -38,6 +40,20 @@ export default async function SessionDetailPage({
     params.projectId,
     params.sessionId,
   );
+  const uploadMediaForSession = uploadSessionMedia.bind(
+    null,
+    params.projectId,
+    params.sessionId,
+  );
+
+  let signedMediaUrl: string | null = null;
+  if (session.media_path) {
+    const admin = createSupabaseAdminClient();
+    const { data: signedData } = await admin.storage
+      .from("rehearsals")
+      .createSignedUrl(session.media_path, 60 * 60);
+    signedMediaUrl = signedData?.signedUrl ?? null;
+  }
 
   return (
     <div className="space-y-6">
@@ -65,10 +81,33 @@ export default async function SessionDetailPage({
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-muted-foreground">Upload</h2>
-          <p className="mt-2 text-sm">
-            Upload rehearsal media here. This panel will connect to Supabase
-            Storage in Phase 2.
-          </p>
+          <form action={uploadMediaForSession} className="mt-3 space-y-3">
+            <Input name="media" type="file" accept="audio/*,video/*" required />
+            <Button type="submit">Upload media</Button>
+          </form>
+          {session.media_path && signedMediaUrl ? (
+            <div className="mt-4 space-y-2 text-sm">
+              <p className="text-muted-foreground">
+                {((session.media_size ?? 0) / (1024 * 1024)).toFixed(2)} MB
+              </p>
+              {isPlayableMime(session.media_mime) ? (
+                session.media_mime?.startsWith("audio/") ? (
+                  <audio className="w-full" controls src={signedMediaUrl} />
+                ) : (
+                  <video className="w-full rounded-md" controls src={signedMediaUrl} />
+                )
+              ) : (
+                <a
+                  className="font-medium hover:underline"
+                  href={signedMediaUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Download uploaded file
+                </a>
+              )}
+            </div>
+          ) : null}
         </Card>
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-muted-foreground">Analysis</h2>
