@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createActionItem, uploadSessionMedia } from "./actions";
+import {
+  createActionItem,
+  generateActionsFromAnalysis,
+  runSessionAnalysis,
+  uploadSessionMedia,
+} from "./actions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isPlayableMime } from "@/lib/storage/rehearsal";
@@ -34,6 +40,15 @@ export default async function SessionDetailPage({
     .select("id, text, is_done, created_at")
     .eq("session_id", params.sessionId)
     .order("created_at", { ascending: true });
+  const { data: latestAnalysis } = await supabase
+    .from("analyses")
+    .select(
+      "speaking_rate_wpm, filler_json, pauses_json, feedback_json, transcript_text, is_estimated, created_at",
+    )
+    .eq("session_id", params.sessionId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   const createActionForSession = createActionItem.bind(
     null,
@@ -41,6 +56,16 @@ export default async function SessionDetailPage({
     params.sessionId,
   );
   const uploadMediaForSession = uploadSessionMedia.bind(
+    null,
+    params.projectId,
+    params.sessionId,
+  );
+  const runAnalysisForSession = runSessionAnalysis.bind(
+    null,
+    params.projectId,
+    params.sessionId,
+  );
+  const generateActionsForSession = generateActionsFromAnalysis.bind(
     null,
     params.projectId,
     params.sessionId,
@@ -54,6 +79,30 @@ export default async function SessionDetailPage({
       .createSignedUrl(session.media_path, 60 * 60);
     signedMediaUrl = signedData?.signedUrl ?? null;
   }
+
+  const feedback =
+    latestAnalysis?.feedback_json && Array.isArray(latestAnalysis.feedback_json)
+      ? latestAnalysis.feedback_json.filter(
+          (item): item is string => typeof item === "string",
+        )
+      : [];
+  const pauses =
+    latestAnalysis?.pauses_json && Array.isArray(latestAnalysis.pauses_json)
+      ? latestAnalysis.pauses_json.filter(
+          (item): item is { second: number; label: string } =>
+            typeof item === "object" &&
+            item !== null &&
+            typeof (item as { second?: unknown }).second === "number" &&
+            typeof (item as { label?: unknown }).label === "string",
+        )
+      : [];
+  const fillerCounts =
+    latestAnalysis?.filler_json &&
+    typeof latestAnalysis.filler_json === "object" &&
+    !Array.isArray(latestAnalysis.filler_json)
+      ? (latestAnalysis.filler_json as Record<string, number>)
+      : {};
+  const maxPauseSecond = pauses.length ? Math.max(...pauses.map((p) => p.second), 100) : 100;
 
   return (
     <div className="space-y-6">
@@ -111,19 +160,92 @@ export default async function SessionDetailPage({
         </Card>
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-muted-foreground">Analysis</h2>
-          <p className="mt-2 text-sm">
-            Analysis cards will summarize speaking rate, fillers, and flow.
-          </p>
+          <form action={runAnalysisForSession} className="mt-3 space-y-3">
+            <Textarea
+              name="transcriptText"
+              placeholder="Paste your transcript here..."
+              defaultValue={latestAnalysis?.transcript_text ?? ""}
+              required
+            />
+            <Button type="submit">Run Analysis</Button>
+          </form>
         </Card>
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-muted-foreground">
             Next actions
           </h2>
-          <p className="mt-2 text-sm">
-            Track the small fixes you want to apply next time.
+          <p className="mt-2 text-sm text-muted-foreground">
+            Create checklist items from the latest analysis feedback.
           </p>
+          <form action={generateActionsForSession} className="mt-3">
+            <Button disabled={!feedback.length} type="submit" variant="secondary">
+              Generate Next Actions
+            </Button>
+          </form>
         </Card>
       </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="p-5">
+          <h3 className="text-sm font-semibold text-muted-foreground">Speaking Rate</h3>
+          <p className="mt-2 text-2xl font-semibold">
+            {latestAnalysis?.speaking_rate_wpm ?? "-"} WPM
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">Estimated</p>
+        </Card>
+        <Card className="p-5 lg:col-span-2">
+          <h3 className="text-sm font-semibold text-muted-foreground">Filler Summary</h3>
+          {Object.keys(fillerCounts).length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {Object.entries(fillerCounts).map(([key, count]) => (
+                <span
+                  key={key}
+                  className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground"
+                >
+                  {key}: {count}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-muted-foreground">No analysis yet.</p>
+          )}
+        </Card>
+      </div>
+
+      <Card className="space-y-3 p-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-muted-foreground">Timeline</h3>
+          <span className="text-xs text-muted-foreground">Estimated</span>
+        </div>
+        <div className="relative h-3 rounded-full bg-muted">
+          {pauses.map((pause) => (
+            <span
+              key={`${pause.second}-${pause.label}`}
+              className="absolute top-1/2 h-4 w-0.5 -translate-y-1/2 bg-foreground/70"
+              style={{ left: `${(pause.second / maxPauseSecond) * 100}%` }}
+              title={pause.label}
+            />
+          ))}
+        </div>
+        {!pauses.length ? (
+          <p className="text-sm text-muted-foreground">No timeline markers yet.</p>
+        ) : null}
+      </Card>
+
+      <Card className="p-5">
+        <h3 className="text-sm font-semibold text-muted-foreground">Feedback</h3>
+        {feedback.length ? (
+          <ul className="mt-3 space-y-2">
+            {feedback.map((tip) => (
+              <li key={tip} className="text-sm">
+                - {tip}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">No feedback yet.</p>
+        )}
+      </Card>
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Action checklist</h2>

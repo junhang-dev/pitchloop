@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { analyzeTranscript } from "@/lib/analysis/analyze";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   buildRehearsalStoragePath,
@@ -135,6 +136,140 @@ export async function uploadSessionMedia(
         updateError.message,
       )}`,
     );
+  }
+
+  revalidatePath(`/dashboard/projects/${projectId}/sessions/${sessionId}`);
+}
+
+export async function runSessionAnalysis(
+  projectId: string,
+  sessionId: string,
+  formData: FormData,
+) {
+  const transcriptText = String(formData.get("transcriptText") ?? "").trim();
+  if (!transcriptText) {
+    return redirect(
+      `/dashboard/projects/${projectId}/sessions/${sessionId}?error=Transcript%20is%20required.`,
+    );
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return redirect("/login");
+  }
+
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("id, duration_sec")
+    .eq("id", sessionId)
+    .eq("project_id", projectId)
+    .single();
+
+  if (!session) {
+    return redirect(
+      `/dashboard/projects/${projectId}/sessions/${sessionId}?error=Session%20not%20found.`,
+    );
+  }
+
+  const analysis = analyzeTranscript({
+    transcriptText,
+    durationSec: session.duration_sec ?? undefined,
+  });
+
+  const { data: existing } = await supabase
+    .from("analyses")
+    .select("id")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const payload = {
+    session_id: sessionId,
+    speaking_rate_wpm: analysis.speakingRateWpm,
+    filler_json: analysis.fillerCounts,
+    pauses_json: analysis.pauses,
+    feedback_json: analysis.feedback,
+    transcript_text: transcriptText,
+    is_estimated: analysis.isEstimated,
+  };
+
+  const { error } = existing?.id
+    ? await supabase.from("analyses").update(payload).eq("id", existing.id)
+    : await supabase.from("analyses").insert(payload);
+
+  if (error) {
+    return redirect(
+      `/dashboard/projects/${projectId}/sessions/${sessionId}?error=${encodeURIComponent(
+        error.message,
+      )}`,
+    );
+  }
+
+  revalidatePath(`/dashboard/projects/${projectId}/sessions/${sessionId}`);
+}
+
+export async function generateActionsFromAnalysis(
+  projectId: string,
+  sessionId: string,
+) {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return redirect("/login");
+  }
+
+  const { data: analysis } = await supabase
+    .from("analyses")
+    .select("feedback_json")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const feedback =
+    analysis?.feedback_json && Array.isArray(analysis.feedback_json)
+      ? analysis.feedback_json.filter(
+          (item): item is string => typeof item === "string",
+        )
+      : [];
+
+  if (!feedback.length) {
+    return redirect(
+      `/dashboard/projects/${projectId}/sessions/${sessionId}?error=No%20analysis%20feedback%20to%20convert.`,
+    );
+  }
+
+  const { data: existingActions } = await supabase
+    .from("actions")
+    .select("text")
+    .eq("session_id", sessionId);
+
+  const existingTexts = new Set(
+    (existingActions ?? []).map((action) => action.text.trim().toLowerCase()),
+  );
+  const inserts = feedback
+    .map((tip) => tip.trim())
+    .filter((tip) => tip.length > 0)
+    .filter((tip) => !existingTexts.has(tip.toLowerCase()))
+    .map((tip) => ({ session_id: sessionId, text: tip }));
+
+  if (inserts.length) {
+    const { error } = await supabase.from("actions").insert(inserts);
+    if (error) {
+      return redirect(
+        `/dashboard/projects/${projectId}/sessions/${sessionId}?error=${encodeURIComponent(
+          error.message,
+        )}`,
+      );
+    }
   }
 
   revalidatePath(`/dashboard/projects/${projectId}/sessions/${sessionId}`);
