@@ -11,8 +11,8 @@ MVP web app to practice presentations solo. The goal is a demo-ready, end-to-end
    - `npm run dev`
 
 ## Environment Variables (Checklist)
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `GITHUB_TOKEN` (only needed for MCP GitHub server)
 - `NEXT_PUBLIC_APP_URL` (default: `http://localhost:3000`)
@@ -20,7 +20,8 @@ MVP web app to practice presentations solo. The goal is a demo-ready, end-to-end
 ## Commands
 - Dev server: `npm run dev`
 - Build: `npm run build`
-- Tests: `npm run test`
+- Lint: `npm run lint`
+- E2E smoke: `npm run test:e2e`
 
 ## MCP Servers
 The MCP servers read from environment variables. Make sure `.env.local` is filled before launching any MCP client.
