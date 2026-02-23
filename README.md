@@ -13,7 +13,7 @@ MVP web app to practice presentations solo. The goal is a demo-ready, end-to-end
 ## Environment Variables (Checklist)
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (server-only; required for storage upload + deterministic E2E user setup)
 - `GITHUB_TOKEN` (only needed for MCP GitHub server)
 - `NEXT_PUBLIC_APP_URL` (default: `http://localhost:3000`)
 
@@ -31,12 +31,20 @@ The MCP servers read from environment variables. Make sure `.env.local` is fille
 2. Create a project (title, goal, audience, duration)
 3. Create a session
 4. Upload rehearsal media
-5. Run analysis
+5. Paste transcript and click **Run Analysis**
 6. Show results:
    - speaking rate
    - fillers
-   - pauses (estimated ok)
+   - timeline markers (estimated)
+   - feedback list
    - next actions checklist
-7. Return to project page:
+7. Click **Generate Next Actions** and confirm checklist auto-populates from feedback
+8. Return to project page:
    - session list
-   - simple trend for speakingRateWpm
+   - speakingRateWpm trend chart
+
+## Known Limitations (Phase 2)
+- Analysis is transcript-only and rule-based (no ASR, no acoustic pause detection).
+- Timeline markers are estimated at fixed intervals and labeled as estimated.
+- One latest analysis is displayed per session (new runs overwrite latest analysis content in UI flow).
+- Next.js shows a middleware deprecation warning (`middleware` -> `proxy`) during dev/build; functional behavior is unchanged.
