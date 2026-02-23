@@ -6,19 +6,21 @@ import { Card } from "@/components/ui/card";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type ProjectDetailPageProps = {
-  params: { projectId: string };
-  searchParams?: { error?: string };
+  params: Promise<{ projectId: string }>;
+  searchParams?: Promise<{ error?: string }>;
 };
 
 export default async function ProjectDetailPage({
   params,
   searchParams,
 }: ProjectDetailPageProps) {
+  const { projectId } = await params;
+  const resolvedSearchParams = await searchParams;
   const supabase = await createSupabaseServerClient();
   const { data: project } = await supabase
     .from("projects")
     .select("id, title, goal, audience, duration_sec, created_at")
-    .eq("id", params.projectId)
+    .eq("id", projectId)
     .single();
 
   if (!project) {
@@ -28,7 +30,7 @@ export default async function ProjectDetailPage({
   const { data: sessions } = await supabase
     .from("sessions")
     .select("id, title, created_at")
-    .eq("project_id", params.projectId)
+    .eq("project_id", projectId)
     .order("created_at", { ascending: true });
 
   const sessionIds = (sessions ?? []).map((session) => session.id);
@@ -67,7 +69,7 @@ export default async function ProjectDetailPage({
 
   const createSessionForProject = createSessionAction.bind(
     null,
-    params.projectId,
+    projectId,
   );
 
   return (
@@ -86,9 +88,9 @@ export default async function ProjectDetailPage({
         <CreateSessionDialog action={createSessionForProject} />
       </div>
 
-      {searchParams?.error ? (
+      {resolvedSearchParams?.error ? (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {searchParams.error}
+          {resolvedSearchParams.error}
         </p>
       ) : null}
 

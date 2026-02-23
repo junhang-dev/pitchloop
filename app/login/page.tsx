@@ -5,11 +5,12 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 type LoginPageProps = {
-  searchParams?: { error?: string; redirectTo?: string };
+  searchParams?: Promise<{ error?: string; redirectTo?: string }>;
 };
 
-export default function LoginPage({ searchParams }: LoginPageProps) {
-  const error = searchParams?.error;
+export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const error = resolvedSearchParams?.error;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6">
@@ -47,7 +48,7 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
               name="password"
               type="password"
               autoComplete="current-password"
-              placeholder="••••••••"
+              placeholder="????????"
               required
             />
           </div>

@@ -5,10 +5,11 @@ import { Card } from "@/components/ui/card";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type ProjectsPageProps = {
-  searchParams?: { error?: string };
+  searchParams?: Promise<{ error?: string }>;
 };
 
 export default async function ProjectsPage({ searchParams }: ProjectsPageProps) {
+  const resolvedSearchParams = await searchParams;
   const supabase = await createSupabaseServerClient();
   const { data: projects } = await supabase
     .from("projects")
@@ -27,9 +28,9 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
         <CreateProjectDialog action={createProjectAction} />
       </div>
 
-      {searchParams?.error ? (
+      {resolvedSearchParams?.error ? (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {searchParams.error}
+          {resolvedSearchParams.error}
         </p>
       ) : null}
 

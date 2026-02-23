@@ -15,20 +15,23 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isPlayableMime } from "@/lib/storage/rehearsal";
 
 type SessionDetailPageProps = {
-  params: { projectId: string; sessionId: string };
-  searchParams?: { error?: string };
+  params: Promise<{ projectId: string; sessionId: string }>;
+  searchParams?: Promise<{ error?: string }>;
 };
 
 export default async function SessionDetailPage({
   params,
   searchParams,
 }: SessionDetailPageProps) {
+  const { projectId, sessionId } = await params;
+  const resolvedSearchParams = await searchParams;
+
   const supabase = await createSupabaseServerClient();
   const { data: session } = await supabase
     .from("sessions")
     .select("id, title, created_at, media_path, media_mime, media_size")
-    .eq("id", params.sessionId)
-    .eq("project_id", params.projectId)
+    .eq("id", sessionId)
+    .eq("project_id", projectId)
     .single();
 
   if (!session) {
@@ -38,37 +41,26 @@ export default async function SessionDetailPage({
   const { data: actions } = await supabase
     .from("actions")
     .select("id, text, is_done, created_at")
-    .eq("session_id", params.sessionId)
+    .eq("session_id", sessionId)
     .order("created_at", { ascending: true });
+
   const { data: latestAnalysis } = await supabase
     .from("analyses")
     .select(
       "speaking_rate_wpm, filler_json, pauses_json, feedback_json, transcript_text, is_estimated, created_at",
     )
-    .eq("session_id", params.sessionId)
+    .eq("session_id", sessionId)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const createActionForSession = createActionItem.bind(
-    null,
-    params.projectId,
-    params.sessionId,
-  );
-  const uploadMediaForSession = uploadSessionMedia.bind(
-    null,
-    params.projectId,
-    params.sessionId,
-  );
-  const runAnalysisForSession = runSessionAnalysis.bind(
-    null,
-    params.projectId,
-    params.sessionId,
-  );
+  const createActionForSession = createActionItem.bind(null, projectId, sessionId);
+  const uploadMediaForSession = uploadSessionMedia.bind(null, projectId, sessionId);
+  const runAnalysisForSession = runSessionAnalysis.bind(null, projectId, sessionId);
   const generateActionsForSession = generateActionsFromAnalysis.bind(
     null,
-    params.projectId,
-    params.sessionId,
+    projectId,
+    sessionId,
   );
 
   let signedMediaUrl: string | null = null;
@@ -110,9 +102,9 @@ export default async function SessionDetailPage({
         <div className="space-y-2">
           <Link
             className="text-sm text-muted-foreground hover:text-foreground"
-            href={`/dashboard/projects/${params.projectId}`}
+            href={`/dashboard/projects/${projectId}`}
           >
-            ← Back to project
+            Back to project
           </Link>
           <h1 className="text-2xl font-semibold">{session.title}</h1>
           <p className="text-sm text-muted-foreground">
@@ -121,9 +113,9 @@ export default async function SessionDetailPage({
         </div>
       </div>
 
-      {searchParams?.error ? (
+      {resolvedSearchParams?.error ? (
         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {searchParams.error}
+          {resolvedSearchParams.error}
         </p>
       ) : null}
 
